@@ -93,6 +93,7 @@ int main(int argc, char **argv)
     goto finish;
   }
 
+  /* Allocate a buffer for RSA-encoded data */
   unsigned char *const output = calloc(1, rsaContext.len);
   if (!output) {
     fprintf(stderr, "Error: failed allocating %lu bytes for the output buffer\n",
@@ -100,6 +101,7 @@ int main(int argc, char **argv)
     goto finish;
   }
 
+  /* Encode a test string in RSA/private mode */
   const char *const inputString = "Hello, this is a test string";
   const size_t inputStringLength = strlen(inputString);
   result = mbedtls_rsa_pkcs1_encrypt(&rsaContext,
@@ -108,6 +110,11 @@ int main(int argc, char **argv)
                                      MBEDTLS_RSA_PRIVATE, inputStringLength,
                                      (const unsigned char *)inputString,
                                      output);
+  if (result) {
+    fprintf(stderr, "Error: encryption failed, code: %d\n", result);
+    goto finish;
+  }
+  /* Print the encoded data */
   int i;
   for (i = 0; i < rsaContext.len; ++i) {
     if (!(i % 16)) {
@@ -122,7 +129,26 @@ int main(int argc, char **argv)
     }
   }
 
+  /* Decode the encoded data */
+  char *const restored = calloc(1, 1024);
+  if (!restored) {
+    fprintf(stderr, "Error: failed allocating the buffer for the restored data\n");
+    goto finish;
+  }
+  size_t olen = 0;
+  result = mbedtls_rsa_pkcs1_decrypt(&rsaContext, NULL, NULL,
+                                     MBEDTLS_RSA_PUBLIC, &olen,
+                                     output,
+                                     restored, 1024);
+  fprintf(stdout, "Restored data length: %lu vs original length: %lu\nRestored data: \"%s\"\n",
+                  (unsigned long)olen, (unsigned long)inputStringLength, restored);
+  if (olen != inputStringLength || strncmp(restored, inputString, inputStringLength)) {
+    fprintf(stderr, "Error: decoded to a wrong data: \"%s\" vs \"%s\"\n", restored, inputString);
+    goto finish;
+  }
+
 finish:
+  free(restored);
   free(output);
   mbedtls_ctr_drbg_free(&drbgContext);
   mbedtls_entropy_free(&entropyContext);
@@ -130,6 +156,7 @@ finish:
     fclose(privateFile);
     privateFile = NULL;
   }
+  mbedtls_rsa_free(&rsaContext);
   fprintf(stdout, "Done.\n");
   return 0;
 }
